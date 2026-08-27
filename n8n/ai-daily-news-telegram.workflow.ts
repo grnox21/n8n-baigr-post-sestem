@@ -19,6 +19,7 @@ import {
   node,
   trigger,
   sticky,
+  placeholder,
   newCredential,
   expr,
 } from '@n8n/workflow-sdk';
@@ -425,33 +426,7 @@ const splitForTelegram = node({
     parameters: {
       mode: 'runOnceForAllItems',
       language: 'javaScript',
-      jsCode: `// ╔══════════════════════════════════════════════════════════════════╗
-// ║  مين بتوصلو النشرة — زيد أو شيل من هون وبس              ║
-// ╠══════════════════════════════════════════════════════════════════╣
-// ║  محادثة شخص = رقم عادي       '1038608008'                  ║
-// ║  قناة        = رقم سالب        '-1001234567890'              ║
-// ║                                                                  ║
-// ║  ⚠ للشخص: لازم يبعت /start للبوت مرة قبل ما تضيف رقمو  ║
-// ║  ⚠ للقناة: لازم البوت يكون Admin فيها مع Post Messages   ║
-// ║  وإلا تليجرام بيرجّع chat not found                        ║
-// ╚══════════════════════════════════════════════════════════════════╝
-const RECIPIENTS = [
-  '1038608008',              // 1) محادثتك الخاصة مع البوت
-  'حط_رقم_الشخص_التاني',   // 2) شخص تاني — بدّل هالنص برقمو
-  'حط_معرف_القناة',        // 3) قناة النشرة — رقم سالب بيبلّش بـ -100
-];
-
-// أي قيمة مو رقم (متل النصوص التذكيرية فوق) بتنتجاهل لحالها،
-// فما بينكسر الإرسال لبقية الوجهات.
-const chatIds = RECIPIENTS
-  .map((r) => String(r).trim())
-  .filter((r) => /^-?[0-9]+$/.test(r));
-
-if (!chatIds.length) {
-  throw new Error('ما في ولا رقم صالح بقائمة RECIPIENTS بأول هالعقدة.');
-}
-
-// حد رسالة تليجرام 4096 حرفاً — نبقى تحته بهامش أمان يكفي رموز HTML
+      jsCode: `// حد رسالة تليجرام 4096 حرفاً — نبقى تحته بهامش أمان يكفي رموز HTML
 const LIMIT = 3500;
 
 const src = $input.first().json || {};
@@ -527,30 +502,20 @@ function balanceTags(s) {
 
 const total = chunks.length;
 
-// 4) رسالة لكل جزء × لكل وجهة.
-//    منرتّب حسب الوجهة أولاً حتى كل وحدة يوصلها (1/2) ثم (2/2) بالترتيب.
-const out = [];
-for (const chatId of chatIds) {
-  for (let i = 0; i < total; i++) {
-    const body = total > 1 ? chunks[i] + '\\n\\n— (' + (i + 1) + '/' + total + ')' : chunks[i];
-    out.push({
-      json: {
-        chatId,
-        text: balanceTags(body),
-        part: i + 1,
-        totalParts: total,
-        dateLabel,
-      },
-    });
-  }
-}
-
-return out;`,
+// رسالة لكل جزء. نفس الرسائل بتروح لعقدتي الإرسال،
+// وكل عقدة فيها رقمها بحقل Chat ID.
+return chunks.map((c, i) => ({
+  json: {
+    text: balanceTags(total > 1 ? c + '\\n\\n— (' + (i + 1) + '/' + total + ')' : c),
+    part: i + 1,
+    totalParts: total,
+    dateLabel,
+  },
+}));`,
     },
   },
   output: [
     {
-      chatId: '1038608008',
       text: '🗞️ <b>نشرة الذكاء الاصطناعي اليومية</b>',
       part: 1,
       totalParts: 2,
@@ -573,8 +538,32 @@ const sendTelegram = node({
     parameters: {
       resource: 'message',
       operation: 'sendMessage',
-      // الوجهات تأتي من قائمة RECIPIENTS في أعلى عقدة Split For Telegram
-      chatId: expr('{{ $json.chatId }}'),
+      chatId: '1038608008',
+      text: expr('{{ $json.text }}'),
+      additionalFields: {
+        parse_mode: 'HTML',
+        appendAttribution: false,
+        disable_web_page_preview: true,
+      },
+    },
+  },
+  output: [{ ok: true, result: { message_id: 1234 } }],
+});
+
+const sendTelegram2 = node({
+  type: 'n8n-nodes-base.telegram',
+  version: 1.2,
+  config: {
+    name: 'Send Digest On Telegram 2',
+    position: [1312, 200],
+    retryOnFail: true,
+    maxTries: 3,
+    waitBetweenTries: 3000,
+    credentials: { telegramApi: newCredential('AI News Bot') },
+    parameters: {
+      resource: 'message',
+      operation: 'sendMessage',
+      chatId: placeholder('الرقم التاني — من @get_id_bot، مثل 987654321'),
       text: expr('{{ $json.text }}'),
       additionalFields: {
         parse_mode: 'HTML',
@@ -642,25 +631,21 @@ const noteModel = sticky(
 );
 
 const noteTelegram = sticky(
-  '## 💬 الإرسال والوجهات\n\n' +
-    'كل الوجهات بقائمة `RECIPIENTS` بأول عقدة **Split For Telegram**.\n' +
-    'حقل Chat ID هون صار `{{ $json.chatId }}` وما لازم تلمسو.\n\n' +
-    '### 📢 إنشاء قناة مستقلة للنشرة\n\n' +
-    'البوتات ما بتقدر تنشئ قنوات — لازم تعملها إنت:\n\n' +
-    '1. تليجرام ← قلم الكتابة ✏️ ← **New Channel**\n' +
-    '2. الاسم مثلاً «نشرة الذكاء الاصطناعي» ← اختر **Private** ← تخطّى إضافة الأعضاء\n' +
-    '3. افتح القناة ← اضغط اسمها فوق ← **Administrators** ← **Add Admin** ← دوّر على بوتك ← فعّل **Post Messages** ← Save\n' +
-    '4. انشر أي رسالة بالقناة، ثم اضغط عليها ← **Forward** ← ابعتها لـ **@get_id_bot**\n' +
-    '5. بيرد عليك بمعرّف القناة — رقم سالب يبلّش بـ `-100`\n' +
-    '6. حط الرقم مكان `حط_معرف_القناة` بالقائمة\n\n' +
-    '⚠️ بدون خطوة 3 (البوت Admin) رح يرجّع خطأ.\n\n' +
-    '### 👤 إضافة شخص\n' +
-    '1. يفتح محادثة مع البوت ويبعت `/start` — إلزامي\n' +
-    '2. يأخذ رقمو من @get_id_bot\n' +
-    '3. حط الرقم بالقائمة\n\n' +
-    '✅ أي خانة لسا نص تذكيري بتنتجاهل لحالها، فما بتكسر الإرسال لبقية الوجهات.\n\n' +
-    'النص يُقسّم لرسائل بحد 3500 حرف مع ترقيم (1/2)، وكل وجهة تأخذ أجزاءها بالترتيب.',
-  [splitForTelegram, sendTelegram],
+  '## 💬 الإرسال — عقدتين، رقم لكل وحدة\n\n' +
+    'عقدة **Split For Telegram** بتطلّع النشرة مرة وحدة، وبتروح للعقدتين مع بعض.\n\n' +
+    '**Send Digest On Telegram** ← الرقم الأول\n' +
+    '**Send Digest On Telegram 2** ← الرقم التاني\n\n' +
+    '### لتعبية رقم\n' +
+    '1. الشخص يفتح محادثة مع بوتك ويضغط **Start** — إلزامي، تليجرام بيمنع البوت يبلّش محادثة\n' +
+    '2. يأخذ رقمو من **@get_id_bot**\n' +
+    '3. حط الرقم بحقل Chat ID بالعقدة\n\n' +
+    '⚠️ رقم بس بلا مسافات قبلو أو بعدو. مسافة وحدة بتخلي تليجرام يرجّع `chat not found`.\n\n' +
+    '### لإضافة رقم تالت بعدين\n' +
+    'اضغط يمين على عقدة الإرسال ← **Duplicate**، بعدين وصّلها من Split For Telegram وغيّر الـ Chat ID.\n\n' +
+    '### التنسيق\n' +
+    'النشرة تُرسل بـ parse_mode = HTML. عقدة Split تهرّب كل الرموز ثم تعيد وسوم b و i و code فقط، وتوازن الوسوم في كل رسالة، لأن أي وسم غير مغلق يجعل تليجرام يرفض الرسالة بالكامل.\n\n' +
+    'النص يُقسّم لرسائل بحد 3500 حرف مع ترقيم (1/2).',
+  [splitForTelegram, sendTelegram, sendTelegram2],
   { color: 2 },
 );
 
@@ -674,6 +659,8 @@ export default workflow('ai-daily-news-telegram', 'نشرة الذكاء الا�
   .to(writeDigest)
   .to(splitForTelegram)
   .to(sendTelegram)
+  .add(splitForTelegram)
+  .to(sendTelegram2)
   .add(noteSchedule)
   .add(noteSources)
   .add(noteDedupe)
