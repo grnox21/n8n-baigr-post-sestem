@@ -41,3 +41,9 @@ Open http://localhost:3000.
 
 All generation state is simulated client-side — no production API is
 called and no credentials are involved.
+
+## أنظمة n8n
+
+- [`n8n/`](./n8n) — نشرة الذكاء الاصطناعي اليومية على واتساب: workflow مجدول
+  يجمع الأخبار وتحديثات الأدوات من 22 مصدراً، يحرّرها Claude بالعربية، ويرسلها
+  كل صباح. التفاصيل وخطوات التشغيل في [`n8n/README.md`](./n8n/README.md).
