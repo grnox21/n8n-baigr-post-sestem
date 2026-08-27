@@ -1,12 +1,12 @@
 /**
- * نشرة الذكاء الاصطناعي اليومية → واتساب
+ * نشرة الذكاء الاصطناعي اليومية → تليجرام
  *
  * كود مصدري لـ n8n Workflow SDK. هذا هو المرجع للـ workflow المنشور،
  * فأي تعديل تعمله على الكانفس عدّله هنا أيضاً حتى يبقى المصدر مطابقاً.
  *
  * المسار: جدولة يومية → 22 مصدر RSS/Atom → تنظيف وفلترة → منع تكرار عبر
- * التشغيلات → تحرير بالعربية عبر Claude مع بحث ويب → تقسيم لرسائل واتساب →
- * إرسال، مع مخرج خطأ يذهب إلى قالب Meta معتمد.
+ * التشغيلات → تحرير بالعربية عبر Claude مع بحث ويب → تنظيف HTML وتقسيم →
+ * إرسال على تليجرام.
  *
  * إعدادات على مستوى الـ workflow (تُضبط من واجهة n8n، ليست جزءاً من الكود):
  *   timezone: Asia/Riyadh
@@ -22,7 +22,6 @@ import {
   placeholder,
   newCredential,
   expr,
-  nodeJson,
 } from '@n8n/workflow-sdk';
 
 const dailyTrigger = trigger({
@@ -353,31 +352,31 @@ const writeDigest = node({
         webSearch: true,
         maxUses: 4,
         system:
-          'أنت محرر نشرة تقنية عربية متخصص في الذكاء الاصطناعي. تكتب تقريراً يومياً واحداً لقارئ محترف يبني أنظمة أتمتة ومحتوى بالذكاء الاصطناعي، ويريد أن يعرف كل تحديث عملي فور نزوله.\n\n' +
+          'أنت محرر نشرة تقنية عربية متخصص في الذكاء الاصطناعي. تكتب تقريراً يومياً واحداً يُرسل على تليجرام لقارئ محترف يبني أنظمة أتمتة ومحتوى بالذكاء الاصطناعي، ويريد أن يعرف كل تحديث عملي فور نزوله.\n\n' +
           'مصادرك:\n' +
           '1) العناصر الخام المرفقة هي الأساس.\n' +
           '2) مسموح لك باستخدام البحث على الويب. استخدمه تحديداً للتحقق من تحديثات Claude و ChatGPT و Gemini، ولقراءة صفحات release notes و changelog الرسمية، ولاكتشاف أداة أو موقع ذكاء اصطناعي جديد انتشر حديثاً.\n' +
           '3) ممنوع منعاً تاماً اختراع خبر أو رابط. كل بند يجب أن يستند إلى عنصر خام أو نتيجة بحث فعلية. إذا لم تجد محتوى لقسم، احذف القسم بالكامل ولا تكتب أنه فارغ.\n\n' +
-          'التنسيق (تنسيق واتساب، ليس ماركداون):\n' +
-          '- للتعريض استخدم نجمة واحدة: *هكذا*\n' +
-          '- ممنوع # و ** والجداول وكتل الكود.\n' +
+          'التنسيق (HTML مبسّط لتليجرام، وليس ماركداون):\n' +
+          '- للتعريض استخدم <b>هكذا</b> فقط، وأغلق كل وسم تفتحه في نفس السطر.\n' +
+          '- ممنوع # و * و ** والعلامة المائلة الخلفية والجداول وكتل الكود، وممنوع أي وسم HTML آخر غير <b>.\n' +
           '- كل نقطة تبدأ بـ •\n' +
-          '- الرابط يُكتب عارياً في سطر مستقل تحت النقطة.\n\n' +
+          '- الرابط يُكتب عارياً في سطر مستقل تحت النقطة، وتليجرام يحوّله إلى رابط تلقائياً.\n\n' +
           'هيكل النشرة (احذف أي قسم لا محتوى له):\n\n' +
-          '⭐ *خبر اليوم*\n' +
+          '⭐ <b>خبر اليوم</b>\n' +
           'سطران: ماذا حدث، ولماذا يهمك عملياً. ثم الرابط.\n\n' +
-          '🤖 *Claude و Anthropic*\n' +
+          '🤖 <b>Claude و Anthropic</b>\n' +
           '• العنوان [جديد] — ما الذي تغيّر بالضبط وما أثره العملي عليك.\n' +
           'الرابط\n\n' +
-          '💬 *ChatGPT و OpenAI*\n' +
+          '💬 <b>ChatGPT و OpenAI</b>\n' +
           'نفس الأسلوب.\n\n' +
-          '✨ *Gemini ونماذج أخرى*\n' +
+          '✨ <b>Gemini ونماذج أخرى</b>\n' +
           'نفس الأسلوب (Gemini، Llama، Mistral، Grok، DeepSeek، Qwen، GLM).\n\n' +
-          '🛠️ *تحديثات أدوات تستخدمها*\n' +
+          '🛠️ <b>تحديثات أدوات تستخدمها</b>\n' +
           'أدوات مثل Cursor و n8n و ComfyUI و Ollama و Hugging Face وأدوات الصور والفيديو والصوت.\n\n' +
-          '🚀 *اكتشاف اليوم*\n' +
+          '🚀 <b>اكتشاف اليوم</b>\n' +
           'أداة أو موقع ذكاء اصطناعي قوي ظهر أو انتشر حديثاً ويؤدي شغلاً حقيقياً. سطر عن ما يفعله، سطر عن لماذا يستحق التجربة، ثم الرابط.\n\n' +
-          '⚡ *سريع*\n' +
+          '⚡ <b>سريع</b>\n' +
           '• من 3 إلى 6 عناوين قصيرة جداً، كل واحد مع رابطه.\n\n' +
           'قواعد المحتوى:\n' +
           '- ركّز على ما هو عملي: ميزة جديدة، نموذج جديد، تغيير تسعير أو حدود، إتاحة عامة، أداة جديدة، تحديث API.\n' +
@@ -390,20 +389,20 @@ const writeDigest = node({
       },
     },
   },
-  output: [{ text: '⭐ *خبر اليوم*\n...' }],
+  output: [{ text: '⭐ <b>خبر اليوم</b>\n...' }],
 });
 
-const splitForWhatsApp = node({
+const splitForTelegram = node({
   type: 'n8n-nodes-base.code',
   version: 2,
   config: {
-    name: 'Split For WhatsApp',
+    name: 'Split For Telegram',
     position: [1080, 0],
     parameters: {
       mode: 'runOnceForAllItems',
       language: 'javaScript',
-      jsCode: `// حد واتساب للرسالة النصية 4096 حرفاً — نبقى تحته بهامش أمان
-const LIMIT = 3400;
+      jsCode: `// حد رسالة تليجرام 4096 حرفاً — نبقى تحته بهامش أمان يكفي رموز HTML
+const LIMIT = 3500;
 
 const src = $input.first().json || {};
 
@@ -428,24 +427,35 @@ if (!text || !text.trim()) {
   throw new Error('لم تُرجِع عقدة Anthropic أي نص. افتح مخرجات العقدة وعدّل أسماء الحقول هنا.');
 }
 
-// البحث على الويب يلفّ النص المقتبس بأسطر جديدة، فتنكسر الجملة في منتصفها.
-// ندمج السطر المفرد المكسور مع سابقه، مع إبقاء:
-//   - الفواصل المزدوجة (\\n\\n) بين الفقرات
-//   - الأسطر التي تبدأ بنقطة أو إيموجي أو رابط
-//   - الأسطر التي تلي عنواناً معرّضاً (ينتهي بـ *)
+// 1) البحث على الويب يلفّ النص المقتبس بأسطر جديدة فتنكسر الجملة في منتصفها.
+//    ندمج السطر المفرد المكسور مع سابقه، مع إبقاء الفواصل المزدوجة
+//    والأسطر التي تبدأ بنقطة أو وسم أو إيموجي أو رابط، والسطر التالي لعنوان ينتهي بـ >
 text = text
-  .replace(/([^\\n*])\\n(?!\\n)(?![•*⭐🤖💬✨🛠🚀⚡—-]|https?:)/g, '$1 ')
+  .replace(/([^\\n>])\\n(?!\\n)(?![•<⭐🤖💬✨🛠🚀⚡—-]|https?:)/g, '$1 ')
   .replace(/[ \\t]{2,}/g, ' ')
   .replace(/[ \\t]+([.،؛:!?؟])/g, '$1')
   .replace(/\\n{3,}/g, '\\n\\n')
   .trim();
 
+// 2) تليجرام في وضع HTML يقبل وسوماً محدودة جداً، وأي وسم غير مغلق يجعله يرفض الرسالة
+//    بالكامل (خطأ 400). لذلك نهرّب كل شيء ثم نعيد المسموح فقط.
+const html = text
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/&lt;b&gt;/g, '<b>')
+  .replace(/&lt;\\/b&gt;/g, '</b>')
+  .replace(/&lt;i&gt;/g, '<i>')
+  .replace(/&lt;\\/i&gt;/g, '</i>')
+  .replace(/&lt;code&gt;/g, '<code>')
+  .replace(/&lt;\\/code&gt;/g, '</code>');
+
 const dateLabel = $('Build Digest Brief').first().json.dateLabel;
-const header = '🗞️ *نشرة الذكاء الاصطناعي اليومية*\\n📅 ' + dateLabel + '\\n\\n';
+const header = '🗞️ <b>نشرة الذكاء الاصطناعي اليومية</b>\\n📅 ' + dateLabel + '\\n\\n';
 
 const chunks = [];
 let cur = '';
-for (const line of (header + text).split('\\n')) {
+for (const line of (header + html).split('\\n')) {
   const candidate = cur ? cur + '\\n' + line : line;
   if (candidate.length > LIMIT) {
     if (cur.trim()) { chunks.push(cur.trim()); }
@@ -456,22 +466,22 @@ for (const line of (header + text).split('\\n')) {
 }
 if (cur.trim()) { chunks.push(cur.trim()); }
 
-const total = chunks.length;
+// 3) حارس: لو انقسم وسم بين رسالتين، أقفله وافتحه حتى لا يرفض تليجرام الرسالة
+function balanceTags(s) {
+  const open = (s.match(/<b>/g) || []).length;
+  const close = (s.match(/<\\/b>/g) || []).length;
+  if (open > close) { return s + '</b>'.repeat(open - close); }
+  if (close > open) { return '<b>'.repeat(close - open) + s; }
+  return s;
+}
 
-// نسخة سطر واحد بلا رموز تنسيق ولا أسطر جديدة — تصلح لمعامل قالب واتساب
-const summaryLine = text
-  .replace(/[*_~]/g, '')
-  .replace(/https?:\\/\\/\\S+/g, '')
-  .replace(/\\s+/g, ' ')
-  .trim()
-  .slice(0, 700);
+const total = chunks.length;
 
 return chunks.map((c, i) => ({
   json: {
-    text: total > 1 ? c + '\\n\\n— (' + (i + 1) + '/' + total + ')' : c,
+    text: balanceTags(total > 1 ? c + '\\n\\n— (' + (i + 1) + '/' + total + ')' : c),
     part: i + 1,
     totalParts: total,
-    summaryLine,
     dateLabel,
   },
 }));`,
@@ -479,71 +489,37 @@ return chunks.map((c, i) => ({
   },
   output: [
     {
-      text: '🗞️ *نشرة الذكاء الاصطناعي اليومية*',
+      text: '🗞️ <b>نشرة الذكاء الاصطناعي اليومية</b>',
       part: 1,
       totalParts: 2,
-      summaryLine: 'خبر اليوم ...',
       dateLabel: 'الخميس، 27 أغسطس 2026',
     },
   ],
 });
 
-const sendWhatsApp = node({
-  type: 'n8n-nodes-base.whatsApp',
-  version: 1.1,
+const sendTelegram = node({
+  type: 'n8n-nodes-base.telegram',
+  version: 1.2,
   config: {
-    name: 'Send Digest On WhatsApp',
-    position: [1300, -100],
-    onError: 'continueErrorOutput',
+    name: 'Send Digest On Telegram',
+    position: [1300, 0],
     retryOnFail: true,
-    maxTries: 2,
+    maxTries: 3,
     waitBetweenTries: 3000,
-    credentials: { whatsAppApi: newCredential('WhatsApp Business Cloud') },
+    credentials: { telegramApi: newCredential('Telegram account') },
     parameters: {
       resource: 'message',
-      operation: 'send',
-      messagingProduct: 'whatsapp',
-      phoneNumberId: placeholder('Phone Number ID من Meta (WhatsApp > API Setup)، مثال: 123456789012345'),
-      recipientPhoneNumber: placeholder('رقمك مع مفتاح الدولة بلا + ولا مسافات، مثال: 9665XXXXXXXX'),
-      messageType: 'text',
-      textBody: expr('{{ $json.text }}'),
-      additionalFields: { previewUrl: true },
-    },
-  },
-  output: [{ messaging_product: 'whatsapp' }],
-});
-
-const sendTemplateFallback = node({
-  type: 'n8n-nodes-base.whatsApp',
-  version: 1.1,
-  config: {
-    name: 'Fallback Template Opener',
-    position: [1540, 60],
-    executeOnce: true,
-    credentials: { whatsAppApi: newCredential('WhatsApp Business Cloud') },
-    parameters: {
-      resource: 'message',
-      operation: 'sendTemplate',
-      messagingProduct: 'whatsapp',
-      phoneNumberId: placeholder('نفس Phone Number ID المستخدم أعلاه'),
-      recipientPhoneNumber: placeholder('نفس رقمك مع مفتاح الدولة، مثال: 9665XXXXXXXX'),
-      template: placeholder('اسم قالب معتمد من Meta، مثال: ai_daily_digest (ar)'),
-      components: {
-        component: [
-          {
-            type: 'body',
-            bodyParameters: {
-              parameter: [
-                { type: 'text', text: nodeJson(splitForWhatsApp, 'dateLabel') },
-                { type: 'text', text: nodeJson(splitForWhatsApp, 'summaryLine') },
-              ],
-            },
-          },
-        ],
+      operation: 'sendMessage',
+      chatId: placeholder('Chat ID الخاص بك، رقم مثل 123456789 — احصل عليه من @get_id_bot'),
+      text: expr('{{ $json.text }}'),
+      additionalFields: {
+        parse_mode: 'HTML',
+        appendAttribution: false,
+        disable_web_page_preview: true,
       },
     },
   },
-  output: [{ messaging_product: 'whatsapp' }],
+  output: [{ ok: true, result: { message_id: 1234 } }],
 });
 
 const noteSchedule = sticky(
@@ -596,24 +572,23 @@ const noteModel = sticky(
   { color: 6 },
 );
 
-const noteWhatsApp = sticky(
-  '## 📲 إعداد واتساب — اقرأ هذا قبل التفعيل\n\n' +
-    '**1) الاعتماد**\n' +
-    'عقدتا الإرسال تحتاجان اعتماد **WhatsApp API** (Access Token + Business Account ID). المتاح حالياً `whatsAppTriggerApi` وهو للاستقبال فقط ولا يصلح للإرسال. أنشئ الاعتماد الجديد من Credentials ← WhatsApp API.\n\n' +
-    '**2) املأ الحقول الثلاثة**\n' +
-    '`Phone Number ID` و `Recipient Phone Number` في العقدتين، و `Template` في عقدة الاحتياط.\n\n' +
-    '**3) قيد Meta المهم**\n' +
-    'الرسائل النصية الحرة تصل فقط داخل نافذة **24 ساعة** تبدأ من آخر رسالة **ترسلها أنت** لرقم البوت. خارج النافذة ترفضها Meta بالخطأ 131047.\n\n' +
-    'لذلك عقدة الإرسال لها **مخرج خطأ** يذهب إلى قالب معتمد. أنشئ في Meta Business Manager قالباً باسم `ai_daily_digest` بلغة `ar` وجسمه فيه متغيّران:\n' +
-    '`نشرة الذكاء الاصطناعي — {{1}}` ثم سطر `{{2}}`\n' +
-    'وأضف له زر Quick Reply؛ ضغطك على الزر يفتح النافذة فوراً.\n\n' +
-    '**الحل العملي الأسهل:** أرسل أي رسالة لرقم البوت مرة كل يوم، فتبقى النافذة مفتوحة وتصلك النشرة كاملة كنص حر.\n\n' +
-    'النص يُقسَّم تلقائياً إلى رسائل بحد 3400 حرف مع ترقيم (1/2).',
-  [splitForWhatsApp, sendWhatsApp, sendTemplateFallback],
+const noteTelegram = sticky(
+  '## 💬 إعداد تليجرام\n\n' +
+    '**الاعتماد جاهز** — مربوط على Telegram account الموجود عندك.\n\n' +
+    '**الناقص الوحيد: Chat ID**\n' +
+    '1. افتح محادثة مع @get_id_bot في تليجرام وأرسل /start — يرد عليك برقمك.\n' +
+    '2. الصق الرقم في حقل `Chat ID`.\n\n' +
+    '**مهم:** افتح محادثة مع بوتك أنت وأرسل له /start مرة واحدة. تليجرام يمنع البوت من بدء محادثة معك قبل ذلك، وسيرجع خطأ chat not found.\n\n' +
+    'بعد هذه الخطوة ما فيه أي قيد — لا نوافذ زمنية ولا قوالب معتمدة ولا موافقات.\n\n' +
+    '**التنسيق**\n' +
+    'النشرة تُرسل بـ parse_mode = HTML. عقدة Split For Telegram تهرّب كل الرموز ثم تعيد وسوم b و i و code فقط، وتوازن الوسوم في كل رسالة، لأن أي وسم غير مغلق يجعل تليجرام يرفض الرسالة بالكامل.\n\n' +
+    'النص يُقسّم تلقائياً إلى رسائل بحد 3500 حرف مع ترقيم (1/2).\n' +
+    'معاينة الروابط معطّلة، وتوقيع n8n ملغي.',
+  [splitForTelegram, sendTelegram],
   { color: 2 },
 );
 
-export default workflow('ai-daily-news-whatsapp', 'نشرة الذكاء الاصطناعي اليومية → واتساب')
+export default workflow('ai-daily-news-telegram', 'نشرة الذكاء الاصطناعي اليومية → تليجرام')
   .add(dailyTrigger)
   .to(feedSources)
   .to(readFeed)
@@ -621,10 +596,10 @@ export default workflow('ai-daily-news-whatsapp', 'نشرة الذكاء الا�
   .to(dropAlreadySent)
   .to(buildBrief)
   .to(writeDigest)
-  .to(splitForWhatsApp)
-  .to(sendWhatsApp.onError(sendTemplateFallback))
+  .to(splitForTelegram)
+  .to(sendTelegram)
   .add(noteSchedule)
   .add(noteSources)
   .add(noteDedupe)
   .add(noteModel)
-  .add(noteWhatsApp);
+  .add(noteTelegram);
