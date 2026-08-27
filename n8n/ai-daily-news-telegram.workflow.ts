@@ -49,6 +49,10 @@ const feedSources = node({
       mode: 'runOnceForAllItems',
       language: 'javaScript',
       jsCode: `// قائمة مصادر الأخبار. أضف أو احذف سطراً لتغيير التغطية.
+//
+// ⚠️ المصادر تُقرأ واحداً وراء الآخر، وحد التنفيذ 180 ثانية للـ workflow كله.
+//    فمصدر واحد بطيء يعلّق الطابور. لا تتجاوز 20 مصدراً، وتجنّب المواقع
+//    التي تحجب عناوين السحابة (Reddit و Product Hunt و MIT Tech Review حُذفت لهذا السبب).
 const feeds = [
   // ── المصادر الرسمية للشركات ──
   { label: 'OpenAI',        url: 'https://openai.com/news/rss.xml' },
@@ -72,13 +76,10 @@ const feeds = [
   { label: 'VentureBeat',   url: 'https://venturebeat.com/category/ai/feed/' },
   { label: 'The Verge AI',  url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml' },
   { label: 'Ars Technica',  url: 'https://arstechnica.com/ai/feed/' },
-  { label: 'MIT Tech Rev',  url: 'https://www.technologyreview.com/topic/artificial-intelligence/feed' },
 
   // ── اكتشاف الأدوات والمواقع الجديدة ──
-  { label: 'Product Hunt',  url: 'https://www.producthunt.com/feed?category=artificial-intelligence' },
   { label: 'Hacker News',   url: 'https://hnrss.org/newest?q=AI+OR+LLM+OR+Claude+OR+GPT&points=100' },
   { label: 'Simon Willison', url: 'https://simonwillison.net/atom/everything/' },
-  { label: 'r/LocalLLaMA',  url: 'https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day' },
 ];
 
 return feeds.map((f) => ({ json: f }));`,
@@ -93,10 +94,9 @@ const readFeed = node({
   config: {
     name: 'Read Feed',
     position: [-20, 0],
+    // بلا إعادة محاولة عمداً: المصادر تُقرأ بالتسلسل وحد التنفيذ 180 ثانية،
+    // فإعادة المحاولة كانت تضاعف زمن أي مصدر معلّق وتقطع التشغيل كله.
     onError: 'continueRegularOutput',
-    retryOnFail: true,
-    maxTries: 2,
-    waitBetweenTries: 2000,
     parameters: {
       url: expr('{{ $json.url }}'),
       options: { customFields: 'author, contentSnippet, summary' },
@@ -350,7 +350,7 @@ const writeDigest = node({
         includeMergedResponse: true,
         maxTokens: 8000,
         webSearch: true,
-        maxUses: 4,
+        maxUses: 3,
         system:
           'أنت محرر نشرة تقنية عربية متخصص في الذكاء الاصطناعي. تكتب تقريراً يومياً واحداً يُرسل على تليجرام لقارئ محترف يبني أنظمة أتمتة ومحتوى بالذكاء الاصطناعي، ويريد أن يعرف كل تحديث عملي فور نزوله.\n\n' +
           'مصادرك:\n' +
@@ -535,14 +535,15 @@ const noteSchedule = sticky(
 
 const noteSources = sticky(
   '## 📡 المصادر\n\n' +
-    '22 مصدر RSS/Atom:\n' +
+    '19 مصدر RSS/Atom:\n' +
     '• مدونات OpenAI و Anthropic و Google و DeepMind و Microsoft و AWS و Hugging Face\n' +
     '• سجلات إصدارات Claude Code و OpenAI Codex و Gemini CLI و Ollama و ComfyUI و n8n — هذه تلتقط كل ميزة جديدة فور نزولها\n' +
-    '• TechCrunch و VentureBeat و The Verge و Ars Technica و MIT Tech Review\n' +
-    '• Product Hunt و Hacker News و Simon Willison و r/LocalLLaMA — لاكتشاف الأدوات والمواقع الجديدة\n\n' +
+    '• TechCrunch و VentureBeat و The Verge و Ars Technica\n' +
+    '• Hacker News و Simon Willison — لاكتشاف الأدوات والمواقع الجديدة\n\n' +
     'عدّل القائمة داخل عقدة **Feed Sources**.\n\n' +
     'عقدة Read Feed مضبوطة على `continueRegularOutput`، فأي مصدر يسقط لا يوقف التشغيل — يُتجاهل ويُسجَّل في `deadFeedList`.\n\n' +
-    '⚠️ افتح مخرجات Build Digest Brief وانظر `deadFeedList` واحذف أي مصدر يفشل باستمرار.',
+    '⚠️ المصادر تُقرأ بالتسلسل وحد التنفيذ 180 ثانية. مصدر واحد بطيء يقطع التشغيل كله — لا تتجاوز 20 مصدراً.\n\n' +
+    'افتح مخرجات Build Digest Brief وانظر `deadFeedList` واحذف أي مصدر يفشل باستمرار.',
   [feedSources, readFeed],
   { color: 5 },
 );
@@ -566,7 +567,7 @@ const noteModel = sticky(
   '## 🧠 التحرير بالعربية\n\n' +
     'Claude (`claude-sonnet-5`) يحوّل العناصر الخام إلى نشرة عربية مقسّمة:\n' +
     'خبر اليوم • Claude/Anthropic • ChatGPT/OpenAI • Gemini ونماذج أخرى • تحديثات الأدوات • اكتشاف اليوم • أخبار سريعة\n\n' +
-    '**Web Search مفعّل** (4 عمليات كحد أقصى) ليقرأ صفحات changelog الرسمية ويسدّ ما تفوته الـ RSS.\n\n' +
+    '**Web Search مفعّل** (3 عمليات كحد أقصى) ليقرأ صفحات changelog الرسمية ويسدّ ما تفوته الـ RSS.\n\n' +
     'ممنوع عليه اختراع خبر أو رابط — كل بند لازم له مصدر حقيقي.\n\n' +
     'كل التعليمات في حقل **System** داخل Options. عدّل الأقسام أو الطول أو الأسلوب من هناك.',
   [writeDigest],
