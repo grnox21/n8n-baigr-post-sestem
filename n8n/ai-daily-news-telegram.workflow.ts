@@ -506,11 +506,12 @@ const sendTelegram = node({
     retryOnFail: true,
     maxTries: 3,
     waitBetweenTries: 3000,
-    credentials: { telegramApi: newCredential('Telegram account') },
+    // بوت مستقل عن بوت المشروع الآخر — أنشئه من @BotFather وأضف اعتماده باسم AI News Bot
+    credentials: { telegramApi: newCredential('AI News Bot') },
     parameters: {
       resource: 'message',
       operation: 'sendMessage',
-      chatId: placeholder('Chat ID الخاص بك، رقم مثل 123456789 — احصل عليه من @get_id_bot'),
+      chatId: placeholder('معرّف المحادثة أو القناة الجديدة — رقم مثل 123456789 أو -1001234567890'),
       text: expr('{{ $json.text }}'),
       additionalFields: {
         parse_mode: 'HTML',
@@ -573,13 +574,15 @@ const noteModel = sticky(
 );
 
 const noteTelegram = sticky(
-  '## 💬 إعداد تليجرام\n\n' +
-    '**الاعتماد جاهز** — مربوط على Telegram account الموجود عندك.\n\n' +
-    '**الناقص الوحيد: Chat ID**\n' +
-    '1. افتح محادثة مع @get_id_bot في تليجرام وأرسل /start — يرد عليك برقمك.\n' +
-    '2. الصق الرقم في حقل `Chat ID`.\n\n' +
-    '**مهم:** افتح محادثة مع بوتك أنت وأرسل له /start مرة واحدة. تليجرام يمنع البوت من بدء محادثة معك قبل ذلك، وسيرجع خطأ chat not found.\n\n' +
-    'بعد هذه الخطوة ما فيه أي قيد — لا نوافذ زمنية ولا قوالب معتمدة ولا موافقات.\n\n' +
+  '## 🤖 بوت ومحادثة مستقلّين\n\n' +
+    '### 1) أنشئ البوت الجديد\n' +
+    'في تليجرام افتح **@BotFather** وأرسل `/newbot`، اختر اسم عرض ثم username ينتهي بـ `bot`. يرد عليك بتوكن شكله `8123456789:AAH...`\n\n' +
+    '### 2) أضف الاعتماد في n8n\n' +
+    'Credentials ← New ← **Telegram API**، الاسم `AI News Bot`، الصق التوكن، ثم اختره في خانة Credential في هذه العقدة.\n\n' +
+    '### 3) اختر وجهة النشرة\n' +
+    '**أ) محادثة خاصة مع البوت — الأسرع:** أرسل `/start` لبوتك الجديد مرة واحدة، وخذ رقمك من @get_id_bot.\n\n' +
+    '**ب) قناة خاصة — الأنظف:** أنشئ قناة Private، أضف البوت فيها كـ Admin مع صلاحية Post Messages، وخذ معرّفها من @get_id_bot — رقم سالب يبدأ بـ `-100`.\n\n' +
+    'خطوة `/start` إلزامية في الخيار (أ): تليجرام يمنع البوت من بدء محادثة معك، وبدونها يرجع chat not found.\n\n' +
     '**التنسيق**\n' +
     'النشرة تُرسل بـ parse_mode = HTML. عقدة Split For Telegram تهرّب كل الرموز ثم تعيد وسوم b و i و code فقط، وتوازن الوسوم في كل رسالة، لأن أي وسم غير مغلق يجعل تليجرام يرفض الرسالة بالكامل.\n\n' +
     'النص يُقسّم تلقائياً إلى رسائل بحد 3500 حرف مع ترقيم (1/2).\n' +
