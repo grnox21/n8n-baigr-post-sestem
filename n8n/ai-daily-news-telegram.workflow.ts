@@ -19,7 +19,6 @@ import {
   node,
   trigger,
   sticky,
-  placeholder,
   newCredential,
   expr,
 } from '@n8n/workflow-sdk';
@@ -563,7 +562,7 @@ const sendTelegram2 = node({
     parameters: {
       resource: 'message',
       operation: 'sendMessage',
-      chatId: placeholder('الرقم التاني — من @get_id_bot، مثل 987654321'),
+      chatId: '8638221349',
       text: expr('{{ $json.text }}'),
       additionalFields: {
         parse_mode: 'HTML',
@@ -634,8 +633,11 @@ const noteTelegram = sticky(
   '## 💬 الإرسال — عقدتين، رقم لكل وحدة\n\n' +
     'عقدة **Split For Telegram** بتطلّع النشرة مرة وحدة، وبتروح للعقدتين مع بعض.\n\n' +
     '**Send Digest On Telegram** ← الرقم الأول\n' +
-    '**Send Digest On Telegram 2** ← الرقم التاني\n\n' +
-    '### لتعبية رقم\n' +
+    '`1038608008`\n\n' +
+    '**Send Digest On Telegram 2** ← الرقم التاني\n' +
+    '`8638221349`\n\n' +
+    '✅ الاتنين معبّيين والـ workflow مفعّل.\n\n' +
+    '### لتعبية أو تغيير رقم\n' +
     '1. الشخص يفتح محادثة مع بوتك ويضغط **Start** — إلزامي، تليجرام بيمنع البوت يبلّش محادثة\n' +
     '2. يأخذ رقمو من **@get_id_bot**\n' +
     '3. حط الرقم بحقل Chat ID بالعقدة\n\n' +

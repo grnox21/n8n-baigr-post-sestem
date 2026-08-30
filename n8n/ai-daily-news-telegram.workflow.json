@@ -1,0 +1,397 @@
+{
+  "name": "نشرة الذكاء الاصطناعي اليومية → تليجرام",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "752b7467-91b0-447b-a741-895635fe2514",
+      "name": "Daily 09:00 Riyadh",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -464,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// قائمة مصادر الأخبار. أضف أو احذف سطراً لتغيير التغطية.\n//\n// ⚠️ المصادر تُقرأ واحداً وراء الآخر، وحد التنفيذ 180 ثانية للـ workflow كله.\n//    فمصدر واحد بطيء يعلّق الطابور. لا تتجاوز 20 مصدراً، وتجنّب المواقع\n//    التي تحجب عناوين السحابة (Reddit و Product Hunt و MIT Tech Review حُذفت لهذا السبب).\nconst feeds = [\n  // ── المصادر الرسمية للشركات ──\n  { label: 'OpenAI',        url: 'https://openai.com/news/rss.xml' },\n  { label: 'Anthropic',     url: 'https://www.anthropic.com/rss.xml' },\n  { label: 'Google AI',     url: 'https://blog.google/technology/ai/rss/' },\n  { label: 'DeepMind',      url: 'https://deepmind.google/blog/rss.xml' },\n  { label: 'Microsoft AI',  url: 'https://blogs.microsoft.com/ai/feed/' },\n  { label: 'AWS ML',        url: 'https://aws.amazon.com/blogs/machine-learning/feed/' },\n  { label: 'Hugging Face',  url: 'https://huggingface.co/blog/feed.xml' },\n\n  // ── سجلات إصدارات الأدوات (تلتقط كل ميزة جديدة فور نزولها) ──\n  { label: 'Claude Code',   url: 'https://github.com/anthropics/claude-code/releases.atom' },\n  { label: 'OpenAI Codex',  url: 'https://github.com/openai/codex/releases.atom' },\n  { label: 'Gemini CLI',    url: 'https://github.com/google-gemini/gemini-cli/releases.atom' },\n  { label: 'Ollama',        url: 'https://github.com/ollama/ollama/releases.atom' },\n  { label: 'ComfyUI',       url: 'https://github.com/comfyanonymous/ComfyUI/releases.atom' },\n  { label: 'n8n',           url: 'https://github.com/n8n-io/n8n/releases.atom' },\n\n  // ── المواقع الإخبارية ──\n  { label: 'TechCrunch AI', url: 'https://techcrunch.com/category/artificial-intelligence/feed/' },\n  { label: 'VentureBeat',   url: 'https://venturebeat.com/category/ai/feed/' },\n  { label: 'The Verge AI',  url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml' },\n  { label: 'Ars Technica',  url: 'https://arstechnica.com/ai/feed/' },\n\n  // ── اكتشاف الأدوات والمواقع الجديدة ──\n  { label: 'Hacker News',   url: 'https://hnrss.org/newest?q=AI+OR+LLM+OR+Claude+OR+GPT&points=100' },\n  { label: 'Simon Willison', url: 'https://simonwillison.net/atom/everything/' },\n];\n\nreturn feeds.map((f) => ({ json: f }));"
+      },
+      "id": "5b7c2675-8e98-4825-abae-9c93fb233c23",
+      "name": "Feed Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "customFields": "author, contentSnippet, summary"
+        }
+      },
+      "id": "252fea01-0dd3-471d-ad90-b5bf8fcdbb3a",
+      "name": "Read Feed",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -16,
+        0
+      ],
+      "retryOnFail": false,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// نافذة زمنية: كل ما نُشر خلال آخر 30 ساعة (تغطي فجوة التشغيل اليومي بأمان)\nconst WINDOW_HOURS = 30;\nconst MAX_ITEMS = 110;\nconst PER_SOURCE = 8; // سقف لكل مصدر حتى لا يزاحم مصدر ثرثار بقية المصادر\nconst cutoff = Date.now() - WINDOW_HOURS * 3600 * 1000;\n\nconst seen = new Set();\nconst collected = [];\nconst deadFeeds = [];\n\nfor (const item of $input.all()) {\n  const j = item.json || {};\n\n  // مصدر فشل: onError=continueRegularOutput يمرّر عنصر الإدخال {label,url} كما هو\n  if (j.error || (!j.title && !j.link)) {\n    if (j.url) { deadFeeds.push((j.label || '?') + ' -> ' + j.url); }\n    continue;\n  }\n\n  const link = String(j.link || j.guid || '').trim();\n  const title = String(j.title || '').replace(/\\s+/g, ' ').trim();\n  if (!link || !title) { continue; }\n\n  const key = link.split('?')[0].replace(/\\/+$/, '');\n  if (seen.has(key)) { continue; }\n  seen.add(key);\n\n  const rawDate = j.isoDate || j.pubDate || j.published || j.updated || j.date;\n  const ts = rawDate ? Date.parse(rawDate) : NaN;\n  if (!Number.isNaN(ts) && ts < cutoff) { continue; }\n\n  // صندوق Code في n8n لا يوفر URL، لذلك نستخرج المضيف بتعبير نمطي\n  const hostMatch = link.match(/^https?:\\/\\/([^\\/?#]+)/i);\n  const host = hostMatch ? hostMatch[1].toLowerCase().replace(/^www\\./, '') : 'unknown';\n\n  const body = String(j.contentSnippet || j.summary || j.content || '')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&[a-z]+;/gi, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n\n  collected.push({\n    title,\n    link,\n    source: host,\n    publishedAt: Number.isNaN(ts) ? null : new Date(ts).toISOString(),\n    snippet: body.slice(0, 400),\n    sortKey: Number.isNaN(ts) ? 0 : ts,\n  });\n}\n\ncollected.sort((a, b) => b.sortKey - a.sortKey);\n\n// موازنة: الأحدث أولاً، مع حد أقصى لكل مصدر\nconst perSource = {};\nconst balanced = [];\nfor (const row of collected) {\n  const n = (perSource[row.source] || 0) + 1;\n  perSource[row.source] = n;\n  if (n > PER_SOURCE) { continue; }\n  balanced.push(row);\n  if (balanced.length >= MAX_ITEMS) { break; }\n}\n\nreturn balanced.map((row) => ({\n  json: Object.assign({}, row, {\n    deadFeedCount: deadFeeds.length,\n    deadFeedList: deadFeeds,\n  }),\n}));"
+      },
+      "id": "3c25148b-a299-4551-8aff-2263d4f4b6f3",
+      "name": "Normalize And Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "dedupeValue": "={{ $json.link }}",
+        "options": {
+          "scope": "workflow",
+          "historySize": 20000
+        }
+      },
+      "id": "0b1e0ff2-a86f-4043-b013-cffa2bfe6385",
+      "name": "Drop Already Sent",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        432,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().filter((i) => i.json && i.json.title && i.json.link);\nconst now = new Date();\n\nlet dateLabel = now.toISOString().slice(0, 10);\ntry {\n  dateLabel = new Intl.DateTimeFormat('ar', {\n    timeZone: 'Asia/Riyadh',\n    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n    calendar: 'gregory',\n  }).format(now);\n} catch (e) { /* نبقي على الصيغة الافتراضية */ }\n\nconst lines = items.map((i, n) => {\n  const j = i.json;\n  const when = j.publishedAt ? j.publishedAt.slice(0, 16).replace('T', ' ') + 'Z' : 'بدون تاريخ';\n  const parts = [\n    (n + 1) + '. [' + j.source + ' | ' + when + '] ' + j.title,\n    'URL: ' + j.link,\n  ];\n  if (j.snippet) { parts.push('ملخص: ' + j.snippet); }\n  return parts.join('\\n');\n});\n\nconst first = items.length ? items[0].json : {};\nconst deadFeedList = Array.isArray(first.deadFeedList) ? first.deadFeedList : [];\n\n// عدّ العناصر لكل مصدر — مفيد لمراقبة صحة المصادر من سجل التنفيذ\nconst perSource = {};\nfor (const i of items) {\n  perSource[i.json.source] = (perSource[i.json.source] || 0) + 1;\n}\n\nreturn [{\n  json: {\n    count: items.length,\n    perSource,\n    deadFeedCount: deadFeedList.length,\n    deadFeedList,\n    dateLabel,\n    dateIso: now.toISOString(),\n    feedBundle: lines.length\n      ? lines.join('\\n\\n')\n      : 'لا توجد عناصر جديدة من مصادر RSS اليوم. اعتمد على البحث على الويب فقط.',\n  },\n}];"
+      },
+      "id": "9f4757b2-3c0c-4c3e-9b82-9bf83729c491",
+      "name": "Build Digest Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-5",
+          "cachedResultName": "claude-sonnet-5"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=تاريخ اليوم: {{ $json.dateLabel }}\nعدد العناصر الجديدة من مصادر RSS: {{ $json.count }}\nمصادر فشلت في التحميل اليوم: {{ $json.deadFeedCount }}\n\nالعناصر الخام (آخر 30 ساعة):\n<<<RAW\n{{ $json.feedBundle }}\nRAW>>>\n\nاكتب نشرة اليوم بالكامل حسب التعليمات في رسالة النظام. أخرج النص النهائي فقط."
+            }
+          ]
+        },
+        "options": {
+          "includeMergedResponse": true,
+          "system": "إنت محرر نشرة تقنية بالعامية الشامية، متخصص بالذكاء الاصطناعي. بتكتب تقرير يومي بيوصل على تليجرام لشخص عم يبني أنظمة أتمتة ومحتوى بالذكاء الاصطناعي، وبدو يعرف كل تحديث عملي أول ما ينزل.\n\n═══ قاعدة اللغة — أهم شي بالمطلق ═══\n\n1) اكتب كلشي بالعربي العامي الشامي، زي ما عم تحكي مع صاحبك وبتشرحلو شي مفيد.\n   استعمل: هلق، صار فيك، طلّعوا، زادوا، بيفيدك، شغلة، يعني، بيخليك، لازم، منيح.\n   ممنوع الفصحى المتكلّفة: لا تكتب \"تجدر الإشارة\" ولا \"إذ يُعدّ\" ولا \"الأمر الذي\" ولا \"ممّا يتيح\".\n\n2) ممنوع تترك جملة أو نص جملة بالإنجليزي. كل الشرح عربي.\n\n3) أسماء المنتجات والشركات بتضل بالإنجليزي لأنها أسماء وما بتنترجم: Claude ، ChatGPT ، Gemini ، OpenAI ، n8n ، Ollama.\n\n4) أي مصطلح تقني إنجليزي — **وأي اختصار بحروف كبيرة كمان** — لازم تشرحو: اكتب المعنى بالعربي أولاً، وبعدين حط المصطلح بين قوسين وجوّاته شرح قصير بكلمتين تلاتة.\n\nأمثلة صح:\n• واجهة برمجية (API — الطريقة يلي بتخلي برنامج يحكي مع برنامج تاني)\n• صفحة سجل التحديثات (changelog — صفحة بتسجّل كل تغيير جديد بالبرنامج)\n• طلّعوا خيار جديد اسمو (--restricted) بيمنع البرنامج يشغّل أوامر على جهازك\n• مساحة تخزين مؤقتة (cache — ذاكرة بتحفظ النتيجة لتوفّر وقت ومصاري بالمرة الجاية)\n• تسجيل دخول موحّد (OAuth — طريقة تخليك تدخل على خدمة بحسابك بخدمة تانية بلا ما تعطيها كلمة السر)\n• خدمة أمازون لتشغيل نماذج الذكاء الاصطناعي (Bedrock)\n\nأمثلة غلط — ممنوعة منعاً باتاً:\n✗ \"أتاحت AWS نموذجي Terra وLuna عبر Bedrock مع بقاء الاستدلال داخل الهند\" — فصحى ومصطلحات بلا شرح\n✗ \"توثيق أقوى (OAuth وOIDC)\" — اختصارات مرمية بلا تعريف\n✗ \"إعداد تجريبي في frontmatter الخاص بالـ agent\" — كلمات إنجليزية مرمية بنص الجملة\n\n5) **ممنوع تكتب كلمة إنجليزية بحروف عربية.** يا تترجمها يا تكتبها بحروفها الإنجليزية بين قوسين مع شرح.\n   ✗ غلط: \"الدفع بالفرونتير\" ، \"الـكاش\" ، \"برومبت\"\n   ✓ صح: \"النماذج المتقدمة (frontier)\" ، \"التعليمة يلي بتعطيها للنموذج (prompt)\"\n\n6) إذا ذكرت المصطلح وشرحتو مرة، بعدها بتقدر تستعملو بلا شرح بنفس النشرة.\n\n7) قبل ما تخلّص، اقرأ نشرتك مرة تانية ودوّر على كل كلمة إنجليزية وكل اختصار: إذا ما إلها شرح وما هي اسم منتج، رجّع اكتبها.\n\n═══ مصادرك ═══\n\n1) العناصر المرفقة هي الأساس.\n2) مسموح لك تبحث على الويب. استعملو للتأكد من تحديثات Claude و ChatGPT و Gemini، ولتقرأ صفحات سجل التحديثات الرسمية، ولتلاقي أداة أو موقع ذكاء اصطناعي جديد انتشر هالفترة.\n3) ممنوع تخترع خبر أو رابط. كل بند لازم يكون من عنصر مرفق أو من نتيجة بحث حقيقية. إذا ما لقيت شي لقسم، احذف القسم كلو ولا تكتب إنو فاضي.\n\n═══ التنسيق ═══\n\nHTML مبسّط لتليجرام، مو ماركداون:\n- للتعريض استعمل <b>هيك</b> فقط، وسكّر كل وسم بتفتحو بنفس السطر.\n- ممنوع # و * و ** والعلامة المائلة الخلفية والجداول، وممنوع أي وسم تاني غير <b>.\n- كل نقطة بتبلّش بـ •\n- الرابط بينكتب عاري بسطر لحالو تحت النقطة، وتليجرام بيحوّلو لرابط لحالو.\n- حط رابط تحت كل نقطة لحالها، مو رابط واحد لآخر القسم.\n\n═══ هيكل النشرة ═══\n\n(احذف أي قسم ما إلو محتوى)\n\n⭐ <b>خبر اليوم</b>\nسطرين تلاتة: شو صار، وليش بيهمك إنت بالذات. بعدين الرابط.\n\n🤖 <b>أخبار Claude</b>\n• العنوان [جديد] — شو تغيّر بالضبط، وشو بيعني لإلك عملياً.\nالرابط\n\n💬 <b>أخبار ChatGPT</b>\nنفس الأسلوب.\n\n✨ <b>أخبار Gemini وبقية النماذج</b>\nنفس الأسلوب.\n\n🛠️ <b>أدوات بتستعملها</b>\nأدوات متل Cursor و n8n و ComfyUI و Ollama وأدوات الصور والفيديو والصوت.\n\n🚀 <b>اكتشاف اليوم</b>\nأداة أو موقع ذكاء اصطناعي قوي طلع أو انتشر هالفترة وبيعمل شغل حقيقي. سطر شو بيعمل، سطر ليش يستاهل تجرّبو، بعدين الرابط.\n\n⚡ <b>عالسريع</b>\n• من 3 لـ 6 عناوين قصيرة كتير، كل واحد مع رابطو تحتو.\n\n═══ قواعد المحتوى ═══\n\n- ركّز على العملي: ميزة جديدة، نموذج جديد، تغيير بالأسعار أو بالحدود، شي صار متاح للكل، أداة جديدة.\n- تجاهل أخبار التمويل والاستثمار إلا إذا كانت ضخمة، وتجاهل مقالات الرأي والتحليلات العامة والأخبار المكررة.\n- حط وسم [جديد] بعد عنوان أي ميزة نزلت خلال 24 ساعة.\n- الطول بين 1500 و 3500 حرف، ولا تتجاوز 6000 حرف أبداً.\n- بلّش علطول بالمحتوى: بلا مقدمة ولا ترحيب ولا خاتمة ولا تعليق على شغلك.\n- إذا العناصر قليلة كتير والبحث ما طلّع شي يستاهل: اكتب سطرين بس إنو اليوم كان هادي، مع أبرز شي يستاهل تتابعو.",
+          "webSearch": true,
+          "maxUses": 3,
+          "maxTokens": 8000
+        }
+      },
+      "id": "0afbe3c0-0aab-4d4c-8004-20dd9af4bcf9",
+      "name": "Write Arabic Digest",
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        864,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "uXbNPrxvdlPKIgKB",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// حد رسالة تليجرام 4096 حرفاً — نبقى تحته بهامش أمان يكفي رموز HTML\nconst LIMIT = 3500;\n\nconst src = $input.first().json || {};\n\n// شكل مخرجات عقدة Anthropic يختلف حسب الإعدادات، لذلك نقرأه بعدة طرق\nlet text = '';\nif (typeof src.text === 'string' && src.text.trim()) {\n  text = src.text;\n} else if (typeof src.mergedResponse === 'string' && src.mergedResponse.trim()) {\n  text = src.mergedResponse;\n} else if (typeof src.output === 'string' && src.output.trim()) {\n  text = src.output;\n} else if (Array.isArray(src.content)) {\n  text = src.content\n    .filter((c) => c && (c.type === 'text' || typeof c.text === 'string'))\n    .map((c) => c.text)\n    .join('\\n');\n} else if (typeof src.content === 'string') {\n  text = src.content;\n}\n\nif (!text || !text.trim()) {\n  throw new Error('لم تُرجِع عقدة Anthropic أي نص. افتح مخرجات العقدة وعدّل أسماء الحقول هنا.');\n}\n\n// 1) البحث على الويب يلفّ النص المقتبس بأسطر جديدة فتنكسر الجملة بمنتصفها\ntext = text\n  .replace(/([^\\n>])\\n(?!\\n)(?![•<⭐🤖💬✨🛠🚀⚡—-]|https?:)/g, '$1 ')\n  .replace(/[ \\t]{2,}/g, ' ')\n  .replace(/[ \\t]+([.،؛:!?؟])/g, '$1')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\n// 2) تليجرام بوضع HTML بيقبل وسوم محدودة، وأي وسم مو مسكّر بيخليه يرفض\n//    الرسالة كلها (خطأ 400). لهيك منهرّب كلشي ومنرجّع المسموح بس.\nconst html = text\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/&lt;b&gt;/g, '<b>')\n  .replace(/&lt;\\/b&gt;/g, '</b>')\n  .replace(/&lt;i&gt;/g, '<i>')\n  .replace(/&lt;\\/i&gt;/g, '</i>')\n  .replace(/&lt;code&gt;/g, '<code>')\n  .replace(/&lt;\\/code&gt;/g, '</code>');\n\nconst dateLabel = $('Build Digest Brief').first().json.dateLabel;\nconst header = '🗞️ <b>نشرة الذكاء الاصطناعي اليومية</b>\\n📅 ' + dateLabel + '\\n\\n';\n\nconst chunks = [];\nlet cur = '';\nfor (const line of (header + html).split('\\n')) {\n  const candidate = cur ? cur + '\\n' + line : line;\n  if (candidate.length > LIMIT) {\n    if (cur.trim()) { chunks.push(cur.trim()); }\n    cur = line.length > LIMIT ? line.slice(0, LIMIT) : line;\n  } else {\n    cur = candidate;\n  }\n}\nif (cur.trim()) { chunks.push(cur.trim()); }\n\n// 3) حارس: لو انقسم وسم بين رسالتين، أقفلو وافتحو حتى ما يرفض تليجرام الرسالة\nfunction balanceTags(s) {\n  const open = (s.match(/<b>/g) || []).length;\n  const close = (s.match(/<\\/b>/g) || []).length;\n  if (open > close) { return s + '</b>'.repeat(open - close); }\n  if (close > open) { return '<b>'.repeat(close - open) + s; }\n  return s;\n}\n\nconst total = chunks.length;\n\n// رسالة لكل جزء. نفس الرسائل بتروح لعقدتي الإرسال،\n// وكل عقدة فيها رقمها بحقل Chat ID.\nreturn chunks.map((c, i) => ({\n  json: {\n    text: balanceTags(total > 1 ? c + '\\n\\n— (' + (i + 1) + '/' + total + ')' : c),\n    part: i + 1,\n    totalParts: total,\n    dateLabel,\n  },\n}));"
+      },
+      "id": "9031c90d-78c4-4009-838e-e04b8425a390",
+      "name": "Split For Telegram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⏰ التوقيت — جاهز\n\nتوقيت هذا الـ workflow مضبوط على **Asia/Riyadh** من إعداداته، والجدولة على cron:\n\n`0 9 * * *`\n\nيعني **9:00 صباحاً بتوقيت الرياض كل يوم**. لا تحتاج تعديل شيء.\n\nلتغيير الساعة: غيّر الرقم 9 فقط (مثلاً `0 20 * * *` لـ 8 مساءً).",
+        "height": 300,
+        "width": 230,
+        "color": 4
+      },
+      "id": "35891bb9-eefd-42a9-9c54-6857c01aafb8",
+      "name": "Sticky Note 314b45fe",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -528,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 📡 المصادر\n\n19 مصدر RSS/Atom:\n• مدونات OpenAI و Anthropic و Google و DeepMind و Microsoft و AWS و Hugging Face\n• سجلات إصدارات Claude Code و OpenAI Codex و Gemini CLI و Ollama و ComfyUI و n8n — هذه تلتقط كل ميزة جديدة فور نزولها\n• TechCrunch و VentureBeat و The Verge و Ars Technica\n• Hacker News و Simon Willison — لاكتشاف الأدوات الجديدة\n\n⚠️ **المصادر تُقرأ بالتسلسل، وحد التنفيذ 180 ثانية للـ workflow كله.**\nمصدر واحد بطيء يعلّق الطابور ويقطع التشغيل. لا تتجاوز 20 مصدراً.\n\nحُذفت Reddit و Product Hunt و MIT Tech Review لأنها تحجب أو تُبطئ عناوين السحابة. لا ترجّعها.\n\nإعادة المحاولة معطّلة على Read Feed عمداً: كانت تضاعف زمن أي مصدر معلّق.\nو `continueRegularOutput` يخلي المصدر الساقط يُتجاهل ويُسجّل في `deadFeedList`.",
+        "height": 470,
+        "width": 430,
+        "color": 5
+      },
+      "id": "859b5815-69e4-4705-8e6b-67c37163911e",
+      "name": "Sticky Note 9963f917",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔁 التنظيف ومنع التكرار\n\n**Normalize And Filter**\n• يبقي فقط ما نُشر خلال آخر 30 ساعة\n• ينظّف HTML ويوحّد الروابط\n• يرتّب حسب الأحدث\n• سقف 8 عناصر لكل مصدر حتى لا يزاحم مصدر ثرثار (مثل Reddit) بقية المصادر\n• سقف إجمالي 110 عنصر\n\n**Drop Already Sent**\nيخزّن رابط كل خبر أُرسل سابقاً (20 ألف رابط) فلا يصلك نفس الخبر مرتين أبداً — ولو ظل في الـ feed لأيام.\n\n`alwaysOutputData` مفعّل عمداً حتى تصلك رسالة يومية حتى لو لم يكن هناك جديد إطلاقاً.",
+        "height": 420,
+        "width": 540,
+        "color": 3
+      },
+      "id": "be4dc7ce-11b3-40c2-89ab-d211ec1542e0",
+      "name": "Sticky Note 39891f89",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        192,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🧠 التحرير بالعامية\n\nClaude (`claude-sonnet-5`) يحوّل العناصر الخام إلى نشرة مقسّمة:\nخبر اليوم • Claude • ChatGPT • Gemini وبقية النماذج • أدوات بتستعملها • اكتشاف اليوم • عالسريع\n\n**قاعدة اللغة:**\n• النشرة بالعامية الشامية، ممنوع الفصحى المتكلّفة\n• أسماء المنتجات تبقى بالإنجليزي (Claude ، ChatGPT)\n• أي مصطلح تقني يُشرح بالعربي أولاً، ثم يوضع بين قوسين مع تعريف قصير:\n  واجهة برمجية (API — الطريقة يلي بتخلي برنامج يحكي مع برنامج تاني)\n\n**Web Search مفعّل** (3 عمليات كحد أقصى) ليقرأ صفحات التحديثات الرسمية ويسدّ ما تفوته الـ RSS.\n\nممنوع عليه اختراع خبر أو رابط.\n\nكل التعليمات في حقل **System** داخل Options. عدّل اللهجة أو الأقسام أو الطول من هناك.",
+        "height": 440,
+        "width": 370,
+        "color": 6
+      },
+      "id": "a71ffcb6-8b7f-4d42-8762-ab4f69037224",
+      "name": "Sticky Note 2ea39a59",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        752,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 💬 الإرسال — عقدتين، رقم لكل وحدة\n\nعقدة **Split For Telegram** بتطلّع النشرة مرة وحدة، وبتروح للعقدتين مع بعض.\n\n**Send Digest On Telegram** ← الرقم الأول\n`1038608008`\n\n**Send Digest On Telegram 2** ← الرقم التاني\n`8638221349`\n\n✅ الاتنين معبّيين والـ workflow مفعّل.\n\n─────────────────────────\n\n### لتعبية أو تغيير رقم\n1. الشخص يفتح محادثة مع بوتك ويضغط **Start** — إلزامي، تليجرام بيمنع البوت يبلّش محادثة\n2. يأخذ رقمو من **@get_id_bot**\n3. حط الرقم بحقل Chat ID بالعقدة\n\n⚠️ انتبه: رقم بس بلا مسافات قبلو أو بعدو. مسافة وحدة بتخلي تليجرام يرجّع `chat not found`.\n\n─────────────────────────\n\n### لإضافة رقم تالت بعدين\nاضغط يمين على عقدة الإرسال ← **Duplicate**، بعدين وصّلها من Split For Telegram وغيّر الـ Chat ID.\n\n### التنسيق\nالنشرة تُرسل بـ parse_mode = HTML. عقدة Split تهرّب كل الرموز ثم تعيد وسوم b و i و code فقط، وتوازن الوسوم في كل رسالة، لأن أي وسم غير مغلق يجعل تليجرام يرفض الرسالة بالكامل.\n\nالنص يُقسّم لرسائل بحد 3500 حرف مع ترقيم (1/2).",
+        "height": 660,
+        "width": 450,
+        "color": 2
+      },
+      "id": "ccbb6bac-4450-4bad-9be2-868ed6ec5abb",
+      "name": "Sticky Note 7b8bf538",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "1038608008",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "201acdaa-d0fd-4989-aa0a-734dcbb371ba",
+      "name": "Send Digest On Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1312,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "5fb3c867-36ba-4d55-b9c7-527c7a8599b3",
+      "credentials": {
+        "telegramApi": {
+          "id": "cXfxro4HezDcWKf7",
+          "name": "Telegram account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8638221349",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "29a8b7ac-0f19-4236-8868-0f6f78331f23",
+      "name": "Send Digest On Telegram 2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1504,
+        64
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "webhookId": "d75f286d-7c4d-4013-b557-3a1c144d89ac",
+      "credentials": {
+        "telegramApi": {
+          "id": "cXfxro4HezDcWKf7",
+          "name": "Telegram account 2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 09:00 Riyadh": {
+      "main": [
+        [
+          {
+            "node": "Feed Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feed Sources": {
+      "main": [
+        [
+          {
+            "node": "Read Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Feed": {
+      "main": [
+        [
+          {
+            "node": "Normalize And Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize And Filter": {
+      "main": [
+        [
+          {
+            "node": "Drop Already Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop Already Sent": {
+      "main": [
+        [
+          {
+            "node": "Build Digest Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Digest Brief": {
+      "main": [
+        [
+          {
+            "node": "Write Arabic Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Arabic Digest": {
+      "main": [
+        [
+          {
+            "node": "Split For Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split For Telegram": {
+      "main": [
+        [
+          {
+            "node": "Send Digest On Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Digest On Telegram 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Riyadh",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 180
+  },
+  "pinData": {}
+}

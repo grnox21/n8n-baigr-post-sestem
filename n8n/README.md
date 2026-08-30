@@ -5,9 +5,10 @@
 والأدوات التي تستخدمها، مع أداة أو موقع جديد يستحق التجربة كل يوم.
 
 - **الـ workflow المنشور:** https://grnoxpickup.app.n8n.cloud/workflow/oY2QdPxmgZ3KDkBl
-- **المصدر:** [`ai-daily-news-telegram.workflow.ts`](./ai-daily-news-telegram.workflow.ts)
+- **المصدر (SDK):** [`ai-daily-news-telegram.workflow.ts`](./ai-daily-news-telegram.workflow.ts)
+- **نسخة جاهزة للاستيراد:** [`ai-daily-news-telegram.workflow.json`](./ai-daily-news-telegram.workflow.json)
 
-الـ workflow **غير مفعّل** حالياً. ينقصه بوت تليجرام مستقل و `Chat ID` (الخطوات أدناه).
+الـ workflow **مفعّل** ويرسل يومياً 9:00 صباحاً للرقمين.
 
 ---
 
@@ -81,10 +82,11 @@ Split For Telegram ...... تنظيف النص، تهريب HTML، تقسيم ل�
 - الاسم: `AI News Bot`
 - Access Token: التوكن من BotFather
 
-ثم افتح عقدة `Send Digest On Telegram` واختر `AI News Bot` من خانة Credential.
+ثم افتح عقدتي `Send Digest On Telegram` و `Send Digest On Telegram 2` واختر
+الاعتماد من خانة Credential في كل وحدة.
 
-> العقدة ما زالت مربوطة بـ `Telegram account` القديم — n8n لا يسمح بربط اعتماد
-> غير موجود، فالتبديل يدوي. سوّه قبل التفعيل وإلا أُرسلت النشرة من البوت القديم.
+> ✅ منجز: العقدتان مربوطتان حالياً بالبوت المستقل (`Telegram account 2`)، غير
+> البوت المستخدم في مشاريعك الأخرى.
 
 ### 3) اختر وجهة النشرة
 
@@ -114,8 +116,8 @@ Split For Telegram ...... تنظيف النص، تهريب HTML، تقسيم ل�
 
 | العقدة | الوجهة |
 |---|---|
-| `Send Digest On Telegram` | الرقم الأول |
-| `Send Digest On Telegram 2` | الرقم التاني |
+| `Send Digest On Telegram` | `1038608008` |
+| `Send Digest On Telegram 2` | `8638221349` |
 
 عقدة `Split For Telegram` تطلّع النشرة مرة وحدة وتروح للعقدتين مع بعض.
 
@@ -179,7 +181,39 @@ Split For Telegram ...... تنظيف النص، تهريب HTML، تقسيم ل�
   الجدولة، فلا تعتمد على توقيت الخادم.
 - **الكلفة اليومية:** استدعاء واحد لـ Claude Sonnet مع حتى 4 عمليات بحث.
 
+## إذا خلص الاشتراك التجريبي في n8n
+
+عند انتهاء التجربة **تتوقف المنصة عن تشغيل أي workflow**، فالجدولة اليومية لا
+تُطلَق ولا تصلك النشرة. لكن لا يضيع شيء — كل التصميم محفوظ هنا في المستودع.
+
+**ما يتوقف:** التشغيل المجدول على n8n فقط.
+
+**ما لا يتأثر:**
+- اعتماد Anthropic (اشتراك/رصيد مستقل تماماً عن n8n)
+- بوت تليجرام والمحادثات معه
+- هذا المستودع: ملف `.ts` وملف `.json` والتوثيق
+
+**الاسترجاع** — بعد الاشتراك في خطة مدفوعة، أو على n8n مثبّت على خادمك:
+
+1. `Workflows` ← `Import from File` واختر
+   [`ai-daily-news-telegram.workflow.json`](./ai-daily-news-telegram.workflow.json).
+2. أعد إنشاء الاعتمادين (الاعتمادات **لا** تُصدَّر مع الملف لأنها تحتوي مفاتيح):
+   - **Anthropic API** بمفتاحك.
+   - **Telegram API** بتوكن البوت من BotFather.
+3. اربط الاعتماد الجديد بكل عقدة: `Write Arabic Digest` (Anthropic) و
+   عقدتي `Send Digest On Telegram` (Telegram).
+4. تأكد أن `Settings` ← `Timezone` = `Asia/Riyadh`.
+5. `Execute workflow` للتجربة، ثم **Active**.
+
+> ⚠️ ذاكرة `Drop Already Sent` مخزّنة داخل المنصة ولا تنتقل مع الملف، فقد
+> يتكرر خبر أو خبران في أول نشرة بعد الاستيراد. تنضبط تلقائياً بعدها.
+
+> إذا احتجت تشغيلاً بلا اشتراك: n8n مفتوح المصدر ويمكن تشغيله على خادم صغير
+> (`docker run n8nio/n8n`) واستيراد نفس الملف عليه.
+
 ## مزامنة المصدر
 
 الملف `ai-daily-news-telegram.workflow.ts` هو المرجع. أي تعديل تعمله على
-الكانفس، عدّله في الملف أيضاً حتى يبقى الاثنان متطابقين.
+الكانفس، عدّله في الملف أيضاً حتى يبقى الاثنان متطابقين، وحدّث
+`ai-daily-news-telegram.workflow.json` كذلك (`Download` من قائمة الـ workflow
+في n8n واستبدل الملف) حتى تبقى نسخة الاستيراد محدّثة.
